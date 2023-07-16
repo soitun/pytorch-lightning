@@ -848,7 +848,7 @@ def _validate_device_index_selection(parallel_devices: List[torch.device]) -> No
         )
 
 
-def _patch_deepspeed_engine(engine: "deepspeed.DeepSpeedEngine") -> None:
+def _patch_deepspeed_engine(engine: "deepspeed.DeepSpeedEngine") -> None:  # pragma: no-cover
     # Fixes https://github.com/microsoft/DeepSpeed/issues/3824
 
     from deepspeed import comm as dist
@@ -863,7 +863,7 @@ def _patch_deepspeed_engine(engine: "deepspeed.DeepSpeedEngine") -> None:
         shared_params_by_full_name = {}
 
         is_zero3_model = (engine.zero_optimization_partition_weights()
-                          and any(hasattr(param, "ds_id") for param in self.module.parameters()))
+                          and any(hasattr(param, "ds_id") for param in engine.module.parameters()))
 
         def get_layer_state_dict(module, prefix=""):
             # handle params
