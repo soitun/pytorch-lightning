@@ -430,6 +430,9 @@ class DeepSpeedStrategy(DDPStrategy, _Sharded):
         # broadcast the path from rank 0 to ensure all the states are saved in a common path
         path = self.broadcast(path)
 
+        # Patch the deepspeed engine with our own bugfixes for `DeepSpeedEngine.save_checkpoint`
+        _patch_deepspeed_engine(engine)
+
         # split the checkpoint into two parts:
         # 1) the deepspeed engine encapsulating both the model and optionally the optimizer(s)
         # 2) the rest of the user's state, which in deepspeed is called `client state`
@@ -843,3 +846,51 @@ def _validate_device_index_selection(parallel_devices: List[torch.device]) -> No
             " If you need to select GPUs at a specific index, set the `CUDA_VISIBLE_DEVICES` environment variable"
             f" instead. For example: `CUDA_VISIBLE_DEVICES={','.join(str(i) for i in selected_device_indices)}`."
         )
+
+
+def _patch_deepspeed_engine(engine: "deepspeed.DeepSpeedEngine") -> None:
+    # Fixes https://github.com/microsoft/DeepSpeed/issues/3824
+
+    from deepspeed import comm as dist
+
+    def _get_shared_params(self):
+        """
+        Returns a dict of shared params, which can later be used to reconstruct the original state dict,
+        e.g. in `zero_to_fp32`. Each dict entry is a pair of param names, where the key is the name
+        of the variable that isn't stored and the value is the actual param holding data.
+        """
+        shared_index = {}
+        shared_params_by_full_name = {}
+
+        is_zero3_model = (self.zero_optimization_partition_weights()
+                          and any(hasattr(param, "ds_id") for param in self.module.parameters()))
+
+        def get_layer_state_dict(module, prefix=""):
+            # handle params
+            for name, param in module.named_parameters(recurse=False):
+                if param is None or (is_zero3_model and not hasattr(param, "ds_id")):
+                    continue
+                key = prefix + name
+
+                # When weights are manged by stage 3, we can't rely on param.data_ptr() as it will be reused
+                # as weights get gathered and reduced, but param.ds_id is unique across all zero weights
+                # (and shared params will have the same param.ds_id)
+                param_id = param.ds_id if is_zero3_model else param.data_ptr()
+
+                if param_id in shared_index:
+                    # shared weights
+                    #print(f"`{key}` is shared with `{shared_index[param_id]}`")
+                    shared_params_by_full_name[key] = shared_index[param_id]
+                else:
+                    shared_index[param_id] = key
+
+            for name, child in module.named_children():
+                if child is not None:
+                    get_layer_state_dict(child, prefix + name + ".")
+
+        if dist.get_rank() == 0:
+            get_layer_state_dict(self.module, prefix="")
+
+        return shared_params_by_full_name
+
+    engine._get_shared_params = _get_shared_params

@@ -30,7 +30,8 @@ from torch.optim import Optimizer
 import lightning.pytorch as pl
 from lightning.fabric.plugins import ClusterEnvironment
 from lightning.fabric.strategies import _StrategyRegistry
-from lightning.fabric.strategies.deepspeed import _DEEPSPEED_AVAILABLE, _validate_device_index_selection
+from lightning.fabric.strategies.deepspeed import _DEEPSPEED_AVAILABLE, _validate_device_index_selection, \
+    _patch_deepspeed_engine
 from lightning.fabric.utilities.optimizer import _optimizers_to_device
 from lightning.fabric.utilities.seed import reset_seed
 from lightning.fabric.utilities.types import _PATH, LRScheduler, ReduceLROnPlateau
@@ -781,6 +782,10 @@ class DeepSpeedStrategy(DDPStrategy):
         # dump states as a checkpoint dictionary object
         _exclude_keys = ["state_dict", "optimizer_states"]
         checkpoint = {k: v for k, v in checkpoint.items() if k not in _exclude_keys}
+
+        # Patch the deepspeed engine with our own bugfixes for `DeepSpeedEngine.save_checkpoint`
+        _patch_deepspeed_engine(self.deepspeed_engine)
+
         self.deepspeed_engine.save_checkpoint(filepath, client_state=checkpoint, tag="checkpoint")
 
     def load_checkpoint(self, checkpoint_path: _PATH) -> Dict[str, Any]:
