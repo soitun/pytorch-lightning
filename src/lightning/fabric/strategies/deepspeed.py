@@ -853,7 +853,7 @@ def _patch_deepspeed_engine(engine: "deepspeed.DeepSpeedEngine") -> None:
 
     from deepspeed import comm as dist
 
-    def _get_shared_params(self):
+    def _get_shared_params():
         """
         Returns a dict of shared params, which can later be used to reconstruct the original state dict,
         e.g. in `zero_to_fp32`. Each dict entry is a pair of param names, where the key is the name
@@ -862,7 +862,7 @@ def _patch_deepspeed_engine(engine: "deepspeed.DeepSpeedEngine") -> None:
         shared_index = {}
         shared_params_by_full_name = {}
 
-        is_zero3_model = (self.zero_optimization_partition_weights()
+        is_zero3_model = (engine.zero_optimization_partition_weights()
                           and any(hasattr(param, "ds_id") for param in self.module.parameters()))
 
         def get_layer_state_dict(module, prefix=""):
@@ -889,7 +889,7 @@ def _patch_deepspeed_engine(engine: "deepspeed.DeepSpeedEngine") -> None:
                     get_layer_state_dict(child, prefix + name + ".")
 
         if dist.get_rank() == 0:
-            get_layer_state_dict(self.module, prefix="")
+            get_layer_state_dict(engine.module, prefix="")
 
         return shared_params_by_full_name
 
