@@ -17,8 +17,8 @@ class RandomDataset(Dataset):
 
     def __getitem__(self, idx):
         arr = torch.randn(self.shape) ** (5 / 4)
-        for x in torch.randn(30000):
-            arr *= x
+        # for x in torch.randn(30000):
+        #     arr *= x
         return arr
 
 
@@ -32,9 +32,13 @@ class BoringModel(nn.Module):
 
 
 def run(rank, world_size):
-    cuda = False
+    cuda = True
+    torch.manual_seed(1)
+    device = torch.device("cuda", rank) if cuda else torch.device("cpu")
+    if cuda:
+        torch.cuda.manual_seed(1)
+        torch.cuda.set_device(device)
 
-    print("init rank", rank)
     os.environ["LOCAL_RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
     os.environ["MASTER_ADDR"] = "localhost"
@@ -48,14 +52,21 @@ def run(rank, world_size):
     print("init rank done", rank)
 
     train = RandomDataset((3, 2048, 2048), 10000)
-    train = DataLoader(train, batch_size=32, pin_memory=True, num_workers=2)
+    train = DataLoader(
+        train, 
+        batch_size=32, 
+        pin_memory=True, 
+        num_workers=0,  # change here
+    )
 
-    model = BoringModel()
+    model = BoringModel().to(device)
     ddp_model = DistributedDataParallel(model, device_ids=([rank] if cuda else None))
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    optimizer = torch.optim.SGD(ddp_model.parameters(), lr=0.1)
 
+    print("start training")
     for i, batch in enumerate(train):
         print(i)
+        batch = batch.to(device)
         prediction = ddp_model(batch)
         loss = torch.nn.functional.mse_loss(prediction, torch.ones_like(prediction))
         loss.backward()
@@ -64,5 +75,5 @@ def run(rank, world_size):
 
 
 if __name__ == "__main__":
-    world_size = 2
-    torch.multiprocessing.spawn(run, nprocs=world_size, args=(world_size,))
+    world_size = 4  # change here
+    torch.multiprocessing.spawn(run, nprocs=world_size, args=(world_size, ))
