@@ -2,7 +2,7 @@ import os
 from contextlib import nullcontext
 from datetime import timedelta
 from functools import partial
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 from unittest import mock
 from unittest.mock import ANY, MagicMock, Mock
 
@@ -19,7 +19,7 @@ from lightning.fabric.utilities.imports import (
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.demos.boring_classes import BoringModel
-from lightning.pytorch.plugins.precision.fsdp import FSDPMixedPrecisionPlugin
+from lightning.pytorch.plugins.precision.fsdp import FSDPPrecisionPlugin
 from lightning.pytorch.strategies import FSDPStrategy
 from lightning.pytorch.utilities.exceptions import MisconfigurationException
 from tests_pytorch.helpers.runif import RunIf
@@ -30,9 +30,9 @@ if _TORCH_GREATER_EQUAL_1_12:
 else:
     size_based_auto_wrap_policy = lambda *_, **__: False
 if _TORCH_GREATER_EQUAL_2_0:
-    from torch.distributed.fsdp.wrap import _FSDPPolicy
+    from torch.distributed.fsdp.wrap import ModuleWrapPolicy
 else:
-    _FSDPPolicy = object
+    ModuleWrapPolicy = object
 
 
 class TestFSDPModel(BoringModel):
@@ -78,7 +78,7 @@ class TestFSDPModel(BoringModel):
 
     def _assert_layer_fsdp_instance(self) -> None:
         assert isinstance(self.layer, FullyShardedDataParallel)
-        assert isinstance(self.trainer.strategy.precision_plugin, FSDPMixedPrecisionPlugin)
+        assert isinstance(self.trainer.strategy.precision_plugin, FSDPPrecisionPlugin)
 
         if self.trainer.precision == "16-mixed":
             param_dtype = torch.float32
@@ -134,20 +134,20 @@ class TestFSDPModelAutoWrapped(TestBoringModel):
 
     def _assert_layer_fsdp_instance(self) -> None:
         assert isinstance(self.layer, torch.nn.Sequential)
-        # assert isinstance(self.trainer.strategy.precision_plugin, FSDPMixedPrecisionPlugin)
+        assert isinstance(self.trainer.strategy.precision_plugin, FSDPPrecisionPlugin)
 
-        # if self.trainer.precision == "16-mixed":
-        #     param_dtype = torch.float32
-        #     reduce_dtype = buffer_dtype = torch.float16
-        # elif self.trainer.precision == "bf16-mixed":
-        #     param_dtype = torch.float32
-        #     reduce_dtype = buffer_dtype = torch.bfloat16
-        # elif self.trainer.precision == "16-true":
-        #     param_dtype = reduce_dtype = buffer_dtype = torch.float16
-        # elif self.trainer.precision == "bf16-true":
-        #     param_dtype = reduce_dtype = buffer_dtype = torch.bfloat16
-        # else:
-        #     raise ValueError(f"Unknown precision {self.trainer.precision}")
+        if self.trainer.precision == "16-mixed":
+            param_dtype = torch.float32
+            reduce_dtype = buffer_dtype = torch.float16
+        elif self.trainer.precision == "bf16-mixed":
+            param_dtype = torch.float32
+            reduce_dtype = buffer_dtype = torch.bfloat16
+        elif self.trainer.precision == "16-true":
+            param_dtype = reduce_dtype = buffer_dtype = torch.float16
+        elif self.trainer.precision == "bf16-true":
+            param_dtype = reduce_dtype = buffer_dtype = torch.bfloat16
+        else:
+            raise ValueError(f"Unknown precision {self.trainer.precision}")
 
         for layer_num in [0, 2]:
             if not self.should_be_wrapped[layer_num]:
@@ -155,9 +155,9 @@ class TestFSDPModelAutoWrapped(TestBoringModel):
                 assert not isinstance(self.layer[layer_num], FullyShardedDataParallel)
                 continue
             assert isinstance(self.layer[layer_num], FullyShardedDataParallel)
-            # assert self.layer[layer_num].mixed_precision.param_dtype == param_dtype
-            # assert self.layer[layer_num].mixed_precision.reduce_dtype == reduce_dtype
-            # assert self.layer[layer_num].mixed_precision.buffer_dtype == buffer_dtype
+            assert self.layer[layer_num].mixed_precision.param_dtype == param_dtype
+            assert self.layer[layer_num].mixed_precision.reduce_dtype == reduce_dtype
+            assert self.layer[layer_num].mixed_precision.buffer_dtype == buffer_dtype
 
 
 def _run_multiple_stages(trainer, model, model_path: Optional[str] = None):
@@ -207,26 +207,8 @@ def test_invalid_on_cpu(tmpdir, cuda_count_0):
         trainer.strategy.setup_environment()
 
 
-@RunIf(min_torch="1.12", min_cuda_gpus=1)
-@pytest.mark.parametrize(
-    ("precision", "expected"),
-    [
-        ("16-mixed", (torch.float32, torch.float16, torch.float16)),
-        ("bf16-mixed", (torch.float32, torch.bfloat16, torch.bfloat16)),
-        # TODO: add 16-true and bf16-true once supported
-    ],
-)
-def test_precision_plugin_config(precision, expected):
-    plugin = FSDPMixedPrecisionPlugin(precision=precision, device="cuda")
-    config = plugin.mixed_precision_config
-
-    assert config.param_dtype == expected[0]
-    assert config.buffer_dtype == expected[1]
-    assert config.reduce_dtype == expected[2]
-
-
 @RunIf(min_torch="1.12")
-def test_fsdp_custom_mixed_precision(tmpdir):
+def test_fsdp_custom_mixed_precision():
     """Test to ensure that passing a custom mixed precision config works."""
     config = MixedPrecision()
     strategy = FSDPStrategy(mixed_precision=config)
@@ -260,19 +242,6 @@ def test_fsdp_strategy_checkpoint(tmpdir, precision):
     _run_multiple_stages(trainer, model, os.path.join(tmpdir, "last.ckpt"))
 
 
-class CustomWrapPolicy(_FSDPPolicy):
-    """This is a wrapper around :func:`_module_wrap_policy`."""
-
-    def __init__(self, min_num_params: int):
-        self._policy: Callable = partial(size_based_auto_wrap_policy, min_num_params=min_num_params)
-
-    @property
-    def policy(self):
-        return self._policy
-
-
-custom_fsdp_policy = CustomWrapPolicy(min_num_params=2)
-
 if _TORCH_GREATER_EQUAL_2_0:
 
     def custom_auto_wrap_policy(
@@ -292,12 +261,13 @@ else:
         return unwrapped_params >= 2
 
 
-# @RunIf(min_cuda_gpus=2, skip_windows=True, standalone=True, min_torch="1.12")
-@pytest.mark.parametrize("wrap_min_params", [1024])
+@RunIf(min_cuda_gpus=2, skip_windows=True, standalone=True, min_torch="1.12")
+@pytest.mark.parametrize("wrap_min_params", [2, 1024, 100000000])
 def test_fsdp_strategy_full_state_dict(tmpdir, wrap_min_params):
     """Test to ensure that the full state dict is extracted when using FSDP strategy.
 
     Based on `wrap_min_params`, the model will be fully wrapped, half wrapped, and not wrapped at all.
+
     """
     model = TestFSDPModelAutoWrapped(wrap_min_params=wrap_min_params)
     correct_state_dict = model.state_dict()  # State dict before wrapping
@@ -308,7 +278,7 @@ def test_fsdp_strategy_full_state_dict(tmpdir, wrap_min_params):
         accelerator="gpu",
         devices=2,
         strategy=strategy,
-        # precision="16-mixed",
+        precision="16-mixed",
         max_epochs=1,
         barebones=True,
     )
@@ -348,8 +318,11 @@ def test_fsdp_strategy_full_state_dict(tmpdir, wrap_min_params):
         pytest.param(
             TestFSDPModelAutoWrapped(),
             FSDPStrategy,
-            {"auto_wrap_policy": custom_fsdp_policy, "use_orig_params": True},
-            marks=RunIf(min_torch="2.0.0"),
+            {
+                "auto_wrap_policy": ModuleWrapPolicy({nn.Linear}) if _TORCH_GREATER_EQUAL_2_1 else None,
+                "use_orig_params": True,
+            },
+            marks=RunIf(min_torch="2.1.0"),
             id="autowrap_use_orig_params",
         ),
     ],
@@ -536,27 +509,29 @@ def test_set_timeout(init_process_group_mock):
 @RunIf(min_torch="1.12")
 def test_fsdp_strategy_load_optimizer_states_multiple():
     strategy = FSDPStrategy(parallel_devices=[torch.device("cpu")])
+    spec = torch.optim.Optimizer
 
     # More states than optimizers configured
-    strategy.optimizers = [Mock()]
-    checkpoint = {"optimizer_states": [Mock(), Mock()]}
+    strategy.optimizers = [Mock(spec=spec)]
+    checkpoint = {"optimizer_states": [Mock(spec=spec), Mock(spec=spec)]}
     with pytest.raises(RuntimeError, match="1 optimizers but the checkpoint contains 2 optimizers to load"):
         strategy.load_optimizer_state_dict(checkpoint)
 
     # Fewer states than optimizers configured
-    strategy.optimizers = [Mock(), Mock()]
-    checkpoint = {"optimizer_states": [Mock()]}
+    strategy.optimizers = [Mock(spec=spec), Mock(spec=spec)]
+    checkpoint = {"optimizer_states": [Mock(spec=spec)]}
     with pytest.raises(RuntimeError, match="2 optimizers but the checkpoint contains 1 optimizers to load"):
         strategy.load_optimizer_state_dict(checkpoint)
 
 
-# @RunIf(min_cuda_gpus=2, skip_windows=True, standalone=True, min_torch="1.12")
-@pytest.mark.parametrize("wrap_min_params", [2])
+@RunIf(min_cuda_gpus=2, skip_windows=True, standalone=True, min_torch="1.12")
+@pytest.mark.parametrize("wrap_min_params", [2, 1024, 100000000])
 def test_fsdp_strategy_save_optimizer_states(tmpdir, wrap_min_params):
     """Test to ensure that the full state dict and optimizer states is saved when using FSDP strategy.
 
     Based on `wrap_min_params`, the model will be fully wrapped, half wrapped, and not wrapped at all. If the model can
     be restored to DDP, it means that the optimizer states were saved correctly.
+
     """
     model = TestFSDPModelAutoWrapped(wrap_min_params=wrap_min_params)
 
@@ -566,7 +541,7 @@ def test_fsdp_strategy_save_optimizer_states(tmpdir, wrap_min_params):
         accelerator="gpu",
         devices=2,
         strategy=strategy,
-        # precision="16-mixed",
+        precision="16-mixed",
         max_epochs=1,
         barebones=True,
     )
@@ -602,11 +577,7 @@ def test_fsdp_strategy_save_optimizer_states(tmpdir, wrap_min_params):
         assert len(optimizer_state_dict) == len(restored_optimizer_state_dict)
 
         torch.testing.assert_close(model_state_dict, restored_model_state_dict, atol=0, rtol=0)
-        x = optimizer_state_dict['param_groups'][0]['params'][0]
-        y = restored_optimizer_state_dict['param_groups'][0]['params'][0]
-        print(x)
-        print(y)
-        torch.testing.assert_close(x, y, atol=0, rtol=0)
+        torch.testing.assert_close(optimizer_state_dict, restored_optimizer_state_dict, atol=0, rtol=0)
 
     trainer.strategy.barrier()
 
@@ -618,6 +589,7 @@ def test_fsdp_strategy_load_optimizer_states(tmpdir, wrap_min_params):
 
     Based on `wrap_min_params`, the model will be fully wrapped, half wrapped, and not wrapped at all. If the DDP model
     can be restored to FSDP, it means that the optimizer states were restored correctly.
+
     """
 
     # restore model to ddp
