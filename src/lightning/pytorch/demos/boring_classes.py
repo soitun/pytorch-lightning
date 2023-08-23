@@ -132,6 +132,7 @@ class BoringModel(LightningModule):
         return {"x": self.step(batch)}
 
     def test_step(self, batch: Any, batch_idx: int) -> STEP_OUTPUT:
+        print("input dev", batch.device)
         return {"y": self.step(batch)}
 
     def configure_optimizers(self) -> Tuple[List[torch.optim.Optimizer], List[_TORCH_LRSCHEDULER]]:
