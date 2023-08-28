@@ -81,10 +81,7 @@ def _call_setup_hook(trainer: "pl.Trainer") -> None:
         if isinstance(module, _DeviceDtypeModuleMixin):
             module._device = trainer.strategy.root_device
 
-    # Trigger lazy creation of experiment in loggers so loggers have their metadata available
-    for logger in trainer.loggers:
-        if hasattr(logger, "experiment"):
-            _ = logger.experiment
+    _sync_and_init_loggers(trainer)
 
     trainer.strategy.barrier("pre_setup")
 
@@ -312,3 +309,13 @@ def _call_strategy_hook(
     pl_module._current_fx_name = prev_fx_name
 
     return output
+
+
+def _sync_and_init_loggers(trainer: "pl.Trainer") -> None:
+    for logger in trainer.loggers:
+        state_dict = trainer.strategy.broadcast(logger.state_dict())
+        logger.load_state_dict(state_dict)
+
+        # Trigger lazy creation of experiment in loggers so loggers have their metadata available
+        if hasattr(logger, "experiment"):
+            _ = logger.experiment

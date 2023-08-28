@@ -89,6 +89,22 @@ class Logger(ABC):
     def save(self) -> None:
         """Save log data."""
 
+    def state_dict(self) -> Dict[str, Any]:
+        """Returns the state of this logger as a dict that can be restored using :meth:`load_state_dict`.
+
+        Returns:
+            A dictionary containing logger's state.
+        """
+        return {}
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """Loads the given state..
+
+        Args:
+            state_dict: the logger's state returned by :meth:`state_dict`.
+        """
+        pass
+
     def finalize(self, status: str) -> None:
         """Do any processing that is necessary to finalize an experiment.
 

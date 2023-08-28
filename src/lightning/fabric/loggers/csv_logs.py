@@ -148,6 +148,21 @@ class CSVLogger(Logger):
         super().save()
         self.experiment.save()
 
+    def state_dict(self) -> Dict[str, Any]:
+        return {
+            "root_dir": self._root_dir,
+            "name": self._name,
+            "version": self._version,
+            "prefix": self._prefix,
+        }
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        self._root_dir = state_dict.get("root_dir", self._root_dir)
+        self._name = state_dict.get("name", self._name)
+        self._version = state_dict.get("version", self._version)
+        self._prefix = state_dict.get("prefix", self._prefix)
+        self._fs = get_filesystem(self._root_dir)
+
     @rank_zero_only
     def finalize(self, status: str) -> None:
         if self._experiment is None:
