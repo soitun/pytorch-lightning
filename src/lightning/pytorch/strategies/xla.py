@@ -186,8 +186,9 @@ class XLAStrategy(DDPStrategy):
         if is_tensor:
             if obj.dim() == 0:
                 obj = obj.unsqueeze(0)
-            if obj.device.type != "xla":
-                obj = obj.to(self.root_device)
+            original_device = obj.device
+            # XLA distributed requires that the data is on the XLA device
+            obj = obj.to(self.root_device)
         else:
             # support for arbitrary pickle-ables
             buffer = io.BytesIO()
@@ -201,8 +202,11 @@ class XLAStrategy(DDPStrategy):
         obj = obj[0]
 
         if not is_tensor:
+            # this will preserve the dtype and device of any tensors
             buffer = io.BytesIO(obj.cpu().byte().numpy())
             obj = torch.load(buffer)
+        else:
+            obj = obj.to(original_device)
 
         return obj
 
@@ -266,6 +270,7 @@ class XLAStrategy(DDPStrategy):
 
         Args:
             filepath: Path to checkpoint
+
         """
         if self.local_rank == 0:
             self.checkpoint_io.remove_checkpoint(filepath)
@@ -279,6 +284,7 @@ class XLAStrategy(DDPStrategy):
             sync_grads: flag that allows users to synchronize gradients for the all-gather operation.
         Return:
             A tensor of shape (world_size, ...)
+
         """
         if not self._launched:
             return tensor
@@ -288,13 +294,15 @@ class XLAStrategy(DDPStrategy):
             )
         if tensor.dim() == 0:
             tensor = tensor.unsqueeze(0)
-        if tensor.device.type != "xla":
-            tensor = tensor.to(self.root_device)
+        original_device = tensor.device
+        tensor = tensor.to(self.root_device)
 
         import torch_xla.core.functions as xf
         import torch_xla.core.xla_model as xm
 
-        return xf.all_gather(tensor) if sync_grads else xm.all_gather(tensor)
+        tensor = xf.all_gather(tensor) if sync_grads else xm.all_gather(tensor)
+        tensor = tensor.to(original_device)
+        return tensor
 
     def teardown(self) -> None:
         super().teardown()

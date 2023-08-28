@@ -82,6 +82,7 @@ def _instantiate_logger(logger_class, save_dir, **override_kwargs):
     return logger_class(**args)
 
 
+@mock.patch("lightning.pytorch.loggers.mlflow.mlflow", Mock())
 @mock.patch("lightning.pytorch.loggers.wandb._WANDB_AVAILABLE", True)
 @pytest.mark.parametrize("logger_class", ALL_LOGGER_CLASSES)
 def test_loggers_fit_test_all(tmpdir, monkeypatch, logger_class):
@@ -170,6 +171,7 @@ def test_loggers_pickle_all(tmpdir, monkeypatch, logger_class):
     """Test that the logger objects can be pickled.
 
     This test only makes sense if the packages are installed.
+
     """
     _patch_comet_atexit(monkeypatch)
     try:
@@ -270,8 +272,8 @@ class CustomLoggerWithoutExperiment(Logger):
 @pytest.mark.parametrize("logger_class", [*ALL_LOGGER_CLASSES_WO_NEPTUNE, CustomLoggerWithoutExperiment])
 @RunIf(skip_windows=True)
 def test_logger_initialization(tmpdir, monkeypatch, logger_class):
-    """Test that loggers get replaced by dummy loggers on global rank > 0 and that the experiment object is
-    available at the right time in Trainer."""
+    """Test that loggers get replaced by dummy loggers on global rank > 0 and that the experiment object is available
+    at the right time in Trainer."""
     _patch_comet_atexit(monkeypatch)
     try:
         _test_logger_initialization(tmpdir, logger_class)
@@ -314,7 +316,9 @@ def test_logger_with_prefix_all(tmpdir, monkeypatch):
     # MLflow
     with mock.patch("lightning.pytorch.loggers.mlflow._MLFLOW_AVAILABLE", return_value=True), mock.patch(
         "lightning.pytorch.loggers.mlflow.Metric"
-    ) as Metric, mock.patch("lightning.pytorch.loggers.mlflow.MlflowClient"):
+    ) as Metric, mock.patch("lightning.pytorch.loggers.mlflow.MlflowClient"), mock.patch(
+        "lightning.pytorch.loggers.mlflow.mlflow"
+    ):
         logger = _instantiate_logger(MLFlowLogger, save_dir=tmpdir, prefix=prefix)
         logger.log_metrics({"test": 1.0}, step=0)
         logger.experiment.log_batch.assert_called_once_with(
@@ -373,7 +377,7 @@ def test_logger_default_name(tmpdir, monkeypatch):
     # MLflow
     with mock.patch("lightning.pytorch.loggers.mlflow._MLFLOW_AVAILABLE", return_value=True), mock.patch(
         "lightning.pytorch.loggers.mlflow.MlflowClient"
-    ) as mlflow_client:
+    ) as mlflow_client, mock.patch("lightning.pytorch.loggers.mlflow.mlflow"):
         mlflow_client().get_experiment_by_name.return_value = None
         logger = _instantiate_logger(MLFlowLogger, save_dir=tmpdir)
 
