@@ -934,7 +934,9 @@ By setting to False, you have to add your own distributed sampler:
     def train_dataloader(self):
         dataset = ...
         # default used by the Trainer
-        sampler = torch.utils.data.DistributedSampler(dataset, shuffle=True)
+        sampler = torch.utils.data.DistributedSampler(
+            dataset, shuffle=True, num_replicas=self.trainer.world_size, rank=self.trainer.global_rank,
+        )
         dataloader = DataLoader(dataset, batch_size=32, sampler=sampler)
         return dataloader
 
