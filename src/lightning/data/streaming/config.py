@@ -67,6 +67,7 @@ class ChunksConfig:
             self._downloader = get_downloader_cls(remote_dir)(remote_dir, cache_dir, self._chunks)
 
     def download_chunk_from_index(self, chunk_index: int) -> None:
+        # print(chunk_index)
         chunk_filename = self._chunks[chunk_index]["filename"]
 
         local_chunkpath = os.path.join(self._cache_dir, chunk_filename)

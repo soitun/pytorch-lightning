@@ -123,14 +123,9 @@ class TokensLoader(BaseItemLoader):
             raise ValueError("The provided chunks isn't properly setup.")
 
     def generate_intervals(self) -> List[Tuple[int, int]]:
-        begin = 0
-        end = 0
         for chunk in self._chunks:
             dim = chunk["dim"]
-            num_blocks = dim // self._block_size
-            end += num_blocks
-            self._intervals.append((begin, end))
-            begin += num_blocks
+            self._intervals.append((0, dim -self._block_size - 1))
 
         return self._intervals
 
@@ -157,5 +152,5 @@ class TokensLoader(BaseItemLoader):
         assert self._dtype
 
         buffer: bytes = self._buffers[chunk_index]
-        offset = self._dtype.itemsize * ((index - begin) if index >= begin else index + 1)
+        offset = self._dtype.itemsize *  index
         return torch.frombuffer(buffer, dtype=self._dtype, count=self._block_size, offset=offset)

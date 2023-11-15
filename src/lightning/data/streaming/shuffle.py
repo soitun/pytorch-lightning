@@ -60,6 +60,7 @@ class NoShuffle(Shuffle):
     def get_chunks_and_intervals_per_ranks(self, distributed_env: _DistributedEnv, current_epoch: int) -> Any:
         self.random_state = np.random.RandomState(seed=self.seed + current_epoch)  # type: ignore
         chunk_intervals = self.cache.get_chunk_intervals()
+        # print(len(chunk_intervals))
         indexes = list(range(len(chunk_intervals)))
         shuffled_chunk_intervals = np.asarray(chunk_intervals)[indexes]
 
@@ -70,6 +71,7 @@ class NoShuffle(Shuffle):
             chunks_per_ranks[replica_index].append(chunk_index)
             intervals_per_ranks[replica_index].append(chunk_interval)
 
+        # print(max(chunks_per_ranks[0]))
         return chunks_per_ranks, intervals_per_ranks
 
     def __call__(self, array: np.ndarray) -> List[int]:
@@ -149,6 +151,8 @@ class FullShuffle(Shuffle):
                     num_items_per_ranks[rank] -= items_in_chunk
                     break
 
+        print(max(chunks_per_ranks[0]))
+        # print(chunks_per_ranks)
         return chunks_per_ranks, intervals_per_ranks
 
     def __call__(self, array: np.ndarray) -> List[int]:
