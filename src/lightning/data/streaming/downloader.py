@@ -29,6 +29,7 @@ class Downloader(ABC):
         chunk_filename = self._chunks[chunk_index]["filename"]
         local_chunkpath = os.path.join(self._cache_dir, chunk_filename)
         remote_chunkpath = os.path.join(self._remote_dir, chunk_filename)
+        print("download_chunk_from_index", chunk_index, chunk_filename)
         self.download_file(remote_chunkpath, local_chunkpath)
 
     @abstractmethod

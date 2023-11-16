@@ -56,6 +56,8 @@ class ChunksConfig:
             self._validate_item_loader()
             self._chunks.extend(data["chunks"])
 
+        print("filenames", [c['filename'] for c in self._chunks])
+
         self._config["data_spec"] = treespec_loads(self._config["data_spec"])
 
         self._item_loader.setup(self._config, self._chunks, serializers)

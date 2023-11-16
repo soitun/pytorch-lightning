@@ -132,6 +132,9 @@ class StreamingDataset(IterableDataset):
             self.worker_chunks.append(chunk_index)
             self.worker_intervals.append(chunk_interval)
 
+        print("rank", self.distributed_env.global_rank, "worker", self.worker_env.rank, self.worker_chunks)
+
+
         self.current_indexes = []
         self.chunk_index = 0
         self.index = 0
