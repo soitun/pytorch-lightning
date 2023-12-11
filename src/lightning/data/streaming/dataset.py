@@ -137,7 +137,7 @@ class StreamingDataset(IterableDataset):
 
     def _create_shuffler(self, cache: Cache) -> Shuffle:
         seed = self.seed
-        if self._state_dict is not None:
+        if self._state_dict is not None and self._state_dict[str(cache.rank)]:
             seed = self._state_dict[str(cache.rank)]["seed"]
         return FullShuffle(cache, seed, self.drop_last) if self.shuffle else NoShuffle(cache, seed, self.drop_last)
 
