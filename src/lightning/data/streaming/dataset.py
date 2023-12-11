@@ -157,11 +157,12 @@ class StreamingDataset(IterableDataset):
             self._validate_state_dict()
             state = self._state_dict[str(self.cache.rank)]
 
-            # reload indexes
-            self.chunk_index = state["chunk_index"]
-            self.global_index = state["global_index"]
-            self.index = state["index"]
-            self.current_epoch = state["current_epoch"]
+            if state:
+                # reload indexes
+                self.chunk_index = state["chunk_index"]
+                self.global_index = state["global_index"]
+                self.index = state["index"]
+                self.current_epoch = state["current_epoch"]
 
         chunks_per_replica, intervals_per_replica = self.shuffler.get_chunks_and_intervals_per_ranks(
             self.distributed_env, self.current_epoch
@@ -184,14 +185,16 @@ class StreamingDataset(IterableDataset):
         if self._state_dict:
             state = self._state_dict[str(self.cache.rank)]
 
-            # re-generate indexes
-            interval = self.worker_intervals[self.chunk_index]
-            current_indexes = np.arange(interval[0], interval[1])
-            current_indexes = self.shuffler(current_indexes, self.num_chunks, self.current_epoch, self.chunk_index)
-            self.current_indexes = current_indexes[state["index"] :]
+            if state:
 
-            # Bump the chunk_index
-            self.chunk_index += 1
+                # re-generate indexes
+                interval = self.worker_intervals[self.chunk_index]
+                current_indexes = np.arange(interval[0], interval[1])
+                current_indexes = self.shuffler(current_indexes, self.num_chunks, self.current_epoch, self.chunk_index)
+                self.current_indexes = current_indexes[state["index"] :]
+
+                # Bump the chunk_index
+                self.chunk_index += 1
         else:
             self.current_indexes = []
             self.chunk_index = 0
@@ -257,8 +260,8 @@ class StreamingDataset(IterableDataset):
         self.global_index += 1
         self.index += 1
 
-        # Checkpoint based on time
-        if self.checkpoint_interval and (time() - self.last_time) > self.checkpoint_interval:
+        # Checkpoint for the first iteration, and otherwise on time intervals
+        if self.index == 1 or (self.checkpoint_interval and (time() - self.last_time) > self.checkpoint_interval):
             self._checkpoint(self.chunk_index - 1)
 
         return data
@@ -342,6 +345,9 @@ class StreamingDataset(IterableDataset):
             )
 
         state: Dict[str, Any] = self._state_dict[str(self.cache.rank)]
+
+        if not state:
+            return
 
         if state["shuffle"] != self.shuffle:
             raise ValueError(
