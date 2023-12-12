@@ -72,6 +72,7 @@ class ChunksConfig:
         local_chunkpath = os.path.join(self._cache_dir, chunk_filename)
 
         if os.path.exists(local_chunkpath):
+            print("local chunkpath exists", local_chunkpath)
             return
 
         if self._downloader is None:

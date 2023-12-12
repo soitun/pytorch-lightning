@@ -152,11 +152,14 @@ class StreamingDataset(IterableDataset):
         self.cache = self._create_cache(worker_env=self.worker_env)
         self.shuffler = self._create_shuffler(self.cache)
 
+        print("entering __iter__")
+
         # Handle restart
         if self._state_dict:
             self._validate_state_dict()
             state = self._state_dict[str(self.cache.rank)]
 
+            print("1) state load", self.cache.rank, "is empty", len(state) == 0)
             if state:
                 # reload indexes
                 self.chunk_index = state["chunk_index"]
@@ -185,6 +188,7 @@ class StreamingDataset(IterableDataset):
         if self._state_dict:
             state = self._state_dict[str(self.cache.rank)]
 
+            print("2) state load", self.cache.rank, "is empty", len(state) == 0)
             if state:
 
                 # re-generate indexes
@@ -213,6 +217,7 @@ class StreamingDataset(IterableDataset):
             self.shuffler = self._create_shuffler(self.cache)
         if isinstance(index, int):
             index = ChunkedIndex(index, self.cache._get_chunk_index_from_index(index))
+        print(self.cache.rank, "index", index)
         return self.cache[index]
 
     def __next__(self) -> Any:
@@ -261,7 +266,7 @@ class StreamingDataset(IterableDataset):
         self.index += 1
 
         # Checkpoint for the first iteration, and otherwise on time intervals
-        if self.index == 1 or (self.checkpoint_interval and (time() - self.last_time) > self.checkpoint_interval):
+        if (self.checkpoint_interval and (time() - self.last_time) > self.checkpoint_interval):
             self._checkpoint(self.chunk_index - 1)
 
         return data

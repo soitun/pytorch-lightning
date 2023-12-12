@@ -119,21 +119,28 @@ class PrepareChunksThread(Thread):
 
     def run(self) -> None:
         while True:
+            should_preload = self._pre_download_counter <= self._max_pre_download
+            print("should preload", should_preload)
             if self._pre_download_counter <= self._max_pre_download:
                 chunk_index = _get_from_queue(self._to_download_queue)
+                print("chunk index to download", chunk_index)
                 if chunk_index is not None:
                     self._config.download_chunk_from_index(chunk_index)
 
                     # Preload item if possible to gain some time but only
                     # if this is one of the pre-downloaded chunk
                     if self._pre_download_counter > 0:
+                        print("preload", chunk_index)
                         self._pre_load_chunk(chunk_index)
+                        print("preload end", chunk_index)
 
                     # Avoid downloading too many chunks in advance at the risk of over using the disk space
                     self._pre_download_counter += 1
 
             if self._max_cache_size:
+                print("maybe delete", chunk_index)
                 self._maybe_delete_chunks()
+                print("end maybe delete", chunk_index)
 
             if _get_from_queue(self._to_stop_queue):
                 return

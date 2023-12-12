@@ -182,6 +182,7 @@ class TokensLoader(BaseItemLoader):
         if chunk_filepath not in self._chunk_filepaths:
             self._chunk_filepaths[chunk_filepath] = True
 
+        print("pre-loading chunk", chunk_index, chunk_filepath)
         self._load_chunk(chunk_index, chunk_filepath)
 
     def load_item_from_chunk(self, index: int, chunk_index: int, chunk_filepath: str, begin: int) -> torch.Tensor:
@@ -193,6 +194,7 @@ class TokensLoader(BaseItemLoader):
 
             while not exists:
                 sleep(0.01)
+                print("waiting for chunk to exist", chunk_filepath)
                 exists = os.path.exists(chunk_filepath)
 
             # Wait to avoid any corruption when the file appears
@@ -201,6 +203,7 @@ class TokensLoader(BaseItemLoader):
 
             self._chunk_filepaths[chunk_filepath] = True
 
+        print("loading chunk", chunk_index, chunk_filepath)
         self._load_chunk(chunk_index, chunk_filepath)
 
         assert self._dtype
