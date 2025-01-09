@@ -19,10 +19,9 @@ CSV logger for basic experiment logging that does not require opening ports
 
 """
 
-import logging
 import os
 from argparse import Namespace
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional, Union
 
 from typing_extensions import override
 
@@ -34,8 +33,6 @@ from lightning.fabric.utilities.types import _PATH
 from lightning.pytorch.core.saving import save_hparams_to_yaml
 from lightning.pytorch.loggers.logger import Logger
 from lightning.pytorch.utilities.rank_zero import rank_zero_only
-
-log = logging.getLogger(__name__)
 
 
 class ExperimentWriter(_FabricExperimentWriter):
@@ -55,9 +52,9 @@ class ExperimentWriter(_FabricExperimentWriter):
 
     def __init__(self, log_dir: str) -> None:
         super().__init__(log_dir=log_dir)
-        self.hparams: Dict[str, Any] = {}
+        self.hparams: dict[str, Any] = {}
 
-    def log_hparams(self, params: Dict[str, Any]) -> None:
+    def log_hparams(self, params: dict[str, Any]) -> None:
         """Record hparams."""
         self.hparams.update(params)
 
@@ -147,7 +144,7 @@ class CSVLogger(Logger, FabricCSVLogger):
 
     @override
     @rank_zero_only
-    def log_hyperparams(self, params: Union[Dict[str, Any], Namespace]) -> None:
+    def log_hyperparams(self, params: Union[dict[str, Any], Namespace]) -> None:
         params = _convert_params(params)
         self.experiment.log_hparams(params)
 

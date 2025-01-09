@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, Mock
 import pytest
 
 
-@pytest.fixture()
+@pytest.fixture
 def mlflow_mock(monkeypatch):
     mlflow = ModuleType("mlflow")
     mlflow.set_tracking_uri = Mock()
@@ -38,11 +38,12 @@ def mlflow_mock(monkeypatch):
     mlflow.tracking = mlflow_tracking
     mlflow.entities = mlflow_entities
 
-    (monkeypatch.setattr("lightning.pytorch.loggers.mlflow._MLFLOW_AVAILABLE", True),)
+    monkeypatch.setattr("lightning.pytorch.loggers.mlflow._MLFLOW_AVAILABLE", True)
+    monkeypatch.setattr("lightning.pytorch.loggers.mlflow._MLFLOW_SYNCHRONOUS_AVAILABLE", True)
     return mlflow
 
 
-@pytest.fixture()
+@pytest.fixture
 def wandb_mock(monkeypatch):
     class RunType:  # to make isinstance checks pass
         pass
@@ -88,7 +89,7 @@ def wandb_mock(monkeypatch):
     return wandb
 
 
-@pytest.fixture()
+@pytest.fixture
 def comet_mock(monkeypatch):
     comet = ModuleType("comet_ml")
     monkeypatch.setitem(sys.modules, "comet_ml", comet)
@@ -109,7 +110,7 @@ def comet_mock(monkeypatch):
     return comet
 
 
-@pytest.fixture()
+@pytest.fixture
 def neptune_mock(monkeypatch):
     class RunType:  # to make isinstance checks pass
         def get_root_object(self):
