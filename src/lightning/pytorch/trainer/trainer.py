@@ -23,10 +23,10 @@
 import logging
 import math
 import os
-import warnings
+from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from datetime import timedelta
-from typing import Any, Dict, Generator, Iterable, List, Optional, Union
+from typing import Any, Optional, Union
 from weakref import proxy
 
 import torch
@@ -35,7 +35,6 @@ from torch.optim import Optimizer
 import lightning.pytorch as pl
 from lightning.fabric.utilities.apply_func import convert_tensors_to_scalars
 from lightning.fabric.utilities.cloud_io import _is_local_file_protocol
-from lightning.fabric.utilities.imports import _TORCH_GREATER_EQUAL_2_0
 from lightning.fabric.utilities.types import _PATH
 from lightning.pytorch.accelerators import Accelerator
 from lightning.pytorch.callbacks import Callback, Checkpoint, EarlyStopping, ProgressBar
@@ -83,10 +82,6 @@ from lightning.pytorch.utilities.types import (
 from lightning.pytorch.utilities.warnings import PossibleUserWarning
 
 log = logging.getLogger(__name__)
-# warnings to ignore in trainer
-warnings.filterwarnings(
-    "ignore", message="torch.distributed.reduce_op is deprecated, please use torch.distributed.ReduceOp instead"
-)
 
 
 class Trainer:
@@ -96,17 +91,17 @@ class Trainer:
         *,
         accelerator: Union[str, Accelerator] = "auto",
         strategy: Union[str, Strategy] = "auto",
-        devices: Union[List[int], str, int] = "auto",
+        devices: Union[list[int], str, int] = "auto",
         num_nodes: int = 1,
         precision: Optional[_PRECISION_INPUT] = None,
         logger: Optional[Union[Logger, Iterable[Logger], bool]] = None,
-        callbacks: Optional[Union[List[Callback], Callback]] = None,
+        callbacks: Optional[Union[list[Callback], Callback]] = None,
         fast_dev_run: Union[int, bool] = False,
         max_epochs: Optional[int] = None,
         min_epochs: Optional[int] = None,
         max_steps: int = -1,
         min_steps: Optional[int] = None,
-        max_time: Optional[Union[str, timedelta, Dict[str, int]]] = None,
+        max_time: Optional[Union[str, timedelta, dict[str, int]]] = None,
         limit_train_batches: Optional[Union[int, float]] = None,
         limit_val_batches: Optional[Union[int, float]] = None,
         limit_test_batches: Optional[Union[int, float]] = None,
@@ -129,7 +124,7 @@ class Trainer:
         profiler: Optional[Union[Profiler, str]] = None,
         detect_anomaly: bool = False,
         barebones: bool = False,
-        plugins: Optional[Union[_PLUGIN_INPUT, List[_PLUGIN_INPUT]]] = None,
+        plugins: Optional[Union[_PLUGIN_INPUT, list[_PLUGIN_INPUT]]] = None,
         sync_batchnorm: bool = False,
         reload_dataloaders_every_n_epochs: int = 0,
         default_root_dir: Optional[_PATH] = None,
@@ -207,7 +202,7 @@ class Trainer:
                 across epochs or during iteration-based training.
                 Default: ``1.0``.
 
-            check_val_every_n_epoch: Perform a validation loop every after every `N` training epochs. If ``None``,
+            check_val_every_n_epoch: Perform a validation loop after every `N` training epochs. If ``None``,
                 validation will be done solely based on the number of training batches, requiring ``val_check_interval``
                 to be an integer value.
                 Default: ``1``.
@@ -478,7 +473,7 @@ class Trainer:
         setup._init_profiler(self, profiler)
 
         # init logger flags
-        self._loggers: List[Logger]
+        self._loggers: list[Logger]
         self._logger_connector.on_trainer_init(logger, log_every_n_steps)
 
         # init debugging flags
@@ -1018,9 +1013,7 @@ class Trainer:
     def _run_stage(self) -> Optional[Union[_PREDICT_OUTPUT, _EVALUATE_OUTPUT]]:
         # wait for all to join if on distributed
         self.strategy.barrier("run-stage")
-
-        zero_grad_kwargs = {} if _TORCH_GREATER_EQUAL_2_0 else {"set_to_none": True}
-        self.lightning_module.zero_grad(**zero_grad_kwargs)
+        self.lightning_module.zero_grad()
 
         if self.evaluating:
             return self._evaluation_loop.run()
@@ -1084,8 +1077,7 @@ class Trainer:
         the right data type depending on the precision setting in the Trainer.
 
         The parameters and tensors get created on the device and with the right data type right away without wasting
-        memory being allocated unnecessarily. The automatic device placement under this context manager is only
-        supported with PyTorch 2.0 and newer.
+        memory being allocated unnecessarily.
 
         Args:
             empty_init: Whether to initialize the model with empty weights (uninitialized memory).
@@ -1093,13 +1085,6 @@ class Trainer:
                 Set this to ``True`` if you are loading a checkpoint into a large model.
 
         """
-        if not _TORCH_GREATER_EQUAL_2_0 and self.strategy.root_device.type != "cpu":
-            rank_zero_warn(
-                "`Trainer.init_module()` can't place tensors on the device directly"
-                " with PyTorch < 2.0. Parameters will remain on CPU until the trainer starts."
-                " Upgrade to PyTorch >= 2.0 to fully utilize this feature.",
-                category=PossibleUserWarning,
-            )
         if is_overridden("model_sharded_context", self.strategy, parent=Strategy):
             # warning instead of error so that code changes are not required when changing strategies
             # this is a limitation because processes are not expected to have been launched when this is called
@@ -1165,7 +1150,7 @@ class Trainer:
         return getattr(self.strategy, "num_nodes", 1)
 
     @property
-    def device_ids(self) -> List[int]:
+    def device_ids(self) -> list[int]:
         """List of device indexes per node."""
         devices = (
             self.strategy.parallel_devices
@@ -1192,15 +1177,15 @@ class Trainer:
         return self.strategy.lightning_module  # type: ignore[return-value]
 
     @property
-    def optimizers(self) -> List[Optimizer]:
+    def optimizers(self) -> list[Optimizer]:
         return self.strategy.optimizers
 
     @optimizers.setter
-    def optimizers(self, new_optims: List[Optimizer]) -> None:
+    def optimizers(self, new_optims: list[Optimizer]) -> None:
         self.strategy.optimizers = new_optims
 
     @property
-    def lr_scheduler_configs(self) -> List[LRSchedulerConfig]:
+    def lr_scheduler_configs(self) -> list[LRSchedulerConfig]:
         return self.strategy.lr_scheduler_configs
 
     @property
@@ -1263,7 +1248,7 @@ class Trainer:
         return self.strategy.is_global_zero
 
     @property
-    def distributed_sampler_kwargs(self) -> Optional[Dict[str, Any]]:
+    def distributed_sampler_kwargs(self) -> Optional[dict[str, Any]]:
         if isinstance(self.strategy, ParallelStrategy):
             return self.strategy.distributed_sampler_kwargs
         return None
@@ -1296,7 +1281,7 @@ class Trainer:
         return callbacks[0] if len(callbacks) > 0 else None
 
     @property
-    def early_stopping_callbacks(self) -> List[EarlyStopping]:
+    def early_stopping_callbacks(self) -> list[EarlyStopping]:
         """A list of all instances of :class:`~lightning.pytorch.callbacks.early_stopping.EarlyStopping` found in the
         Trainer.callbacks list."""
         return [c for c in self.callbacks if isinstance(c, EarlyStopping)]
@@ -1309,7 +1294,7 @@ class Trainer:
         return callbacks[0] if len(callbacks) > 0 else None
 
     @property
-    def checkpoint_callbacks(self) -> List[Checkpoint]:
+    def checkpoint_callbacks(self) -> list[Checkpoint]:
         """A list of all instances of :class:`~lightning.pytorch.callbacks.model_checkpoint.ModelCheckpoint` found in
         the Trainer.callbacks list."""
         return [c for c in self.callbacks if isinstance(c, Checkpoint)]
@@ -1377,9 +1362,10 @@ class Trainer:
                 "Saving a checkpoint is only possible if a model is attached to the Trainer. Did you call"
                 " `Trainer.save_checkpoint()` before calling `Trainer.{fit,validate,test,predict}`?"
             )
-        checkpoint = self._checkpoint_connector.dump_checkpoint(weights_only)
-        self.strategy.save_checkpoint(checkpoint, filepath, storage_options=storage_options)
-        self.strategy.barrier("Trainer.save_checkpoint")
+        with self.profiler.profile("save_checkpoint"):
+            checkpoint = self._checkpoint_connector.dump_checkpoint(weights_only)
+            self.strategy.save_checkpoint(checkpoint, filepath, storage_options=storage_options)
+            self.strategy.barrier("Trainer.save_checkpoint")
 
     """
     State properties
@@ -1537,14 +1523,14 @@ class Trainer:
         return self.fit_loop.max_batches
 
     @property
-    def num_sanity_val_batches(self) -> List[Union[int, float]]:
+    def num_sanity_val_batches(self) -> list[Union[int, float]]:
         """The number of validation batches that will be used during the sanity-checking part of ``trainer.fit()``."""
         max_batches = self.fit_loop.epoch_loop.val_loop.max_batches
         # re-compute the `min` in case this is called outside the sanity-checking stage
         return [min(self.num_sanity_val_steps, batches) for batches in max_batches]
 
     @property
-    def num_val_batches(self) -> List[Union[int, float]]:
+    def num_val_batches(self) -> list[Union[int, float]]:
         """The number of validation batches that will be used during ``trainer.fit()`` or ``trainer.validate()``."""
         if self.state.fn == TrainerFn.VALIDATING:
             return self.validate_loop.max_batches
@@ -1553,12 +1539,12 @@ class Trainer:
         return self.fit_loop.epoch_loop.val_loop._max_batches
 
     @property
-    def num_test_batches(self) -> List[Union[int, float]]:
+    def num_test_batches(self) -> list[Union[int, float]]:
         """The number of test batches that will be used during ``trainer.test()``."""
         return self.test_loop.max_batches
 
     @property
-    def num_predict_batches(self) -> List[Union[int, float]]:
+    def num_predict_batches(self) -> list[Union[int, float]]:
         """The number of prediction batches that will be used during ``trainer.predict()``."""
         return self.predict_loop.max_batches
 
@@ -1599,7 +1585,7 @@ class Trainer:
             self.loggers = [logger]
 
     @property
-    def loggers(self) -> List[Logger]:
+    def loggers(self) -> list[Logger]:
         """The list of :class:`~lightning.pytorch.loggers.logger.Logger` used.
 
         .. code-block:: python
@@ -1611,7 +1597,7 @@ class Trainer:
         return self._loggers
 
     @loggers.setter
-    def loggers(self, loggers: Optional[List[Logger]]) -> None:
+    def loggers(self, loggers: Optional[list[Logger]]) -> None:
         self._loggers = loggers if loggers else []
 
     @property
@@ -1665,8 +1651,8 @@ class Trainer:
     def estimated_stepping_batches(self) -> Union[int, float]:
         r"""The estimated number of batches that will ``optimizer.step()`` during training.
 
-        This accounts for gradient accumulation and the current trainer configuration. This might sets up your training
-        dataloader if hadn't been set up already.
+        This accounts for gradient accumulation and the current trainer configuration. This might be used when setting
+        up your training dataloader, if it hasn't been set up already.
 
         .. code-block:: python
 
